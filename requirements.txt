@@ -1,0 +1,11 @@
+# Core AI orchestration
+crewai==1.15.22
+crewai-tools==1.15.22
+
+# Schemas & config
+pydantic==2.12.5
+python-dotenv==1.2.3
+requests==2.34.2
+
+# Testing
+pytest==9.1.1
