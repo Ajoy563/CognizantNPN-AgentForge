@@ -1,2 +1,8 @@
 Backend/*.json
+.env
+**/.env
+*.pem
+*.key
 Frontend/
+.DS_Store
+ai/
