@@ -3,3 +3,12 @@ uvicorn[standard]==0.53.0
 pydantic==2.13.5
 pydantic-settings
 python-dotenv==1.2.3
+pymongo
+httpx
+firebase-admin
+markdown
+jinja2
+reportlab
+# The actual multi-agent workflow lives in ../ai and must be installed in the
+# same environment as the FastAPI application.
+-r ../ai/requirements.txt

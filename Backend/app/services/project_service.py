@@ -1,18 +1,14 @@
 from datetime import datetime, timezone
 
-from typing import Any
-
 from app.core.errors import AppError
-
 from app.db.repositories import projects as projects_repository
+from app.schemas.requests import GenerateRequest
 
 def create_project(
 
     uid: str,
 
-    request: Any,
-
-    title: str | None = None,
+    request: GenerateRequest,
 
 ) -> dict:
 
@@ -44,19 +40,9 @@ def create_project(
 
             "uid": uid,
 
-            "title": title or "Untitled Solution",
-
-            "business_idea": request.business_idea,
-
-            "tech_preference": request.tech_preference,
-
-            "cloud_preference": request.cloud_preference,
-
-            "expected_daily_traffic": request.expected_daily_traffic,
-
-            "delivery_timeline_months": request.delivery_timeline_months,
-
-            "country": request.country,
+            "title": request.business_idea.strip()[:80],
+            **request.model_dump(),
+            "latest_generation_id": None,
 
             "created_at": now,
 

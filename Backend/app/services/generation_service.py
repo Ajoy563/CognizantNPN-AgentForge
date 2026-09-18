@@ -11,6 +11,7 @@ from app.services.ai_service import generate_blueprint
 from app.services.report_service import render_report, generate_pdf
 
 from app.db.repositories import generations as generations_repository
+from app.db.repositories import projects as projects_repository
 
 def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
@@ -124,45 +125,15 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
         # -----------------------------------------------------
 
-        requirements = _get_value(
+        requirements = _to_document(_get_value(blueprint, "requirements"))
 
-            blueprint,
+        architecture = _to_document(_get_value(blueprint, "architecture"))
 
-            "requirements",
+        technology = _to_document(_get_value(blueprint, "technology"))
 
-        )
+        delivery = _to_document(_get_value(blueprint, "delivery"))
 
-        architecture = _get_value(
-
-            blueprint,
-
-            "architecture",
-
-        )
-
-        technology = _get_value(
-
-            blueprint,
-
-            "technology",
-
-        )
-
-        delivery = _get_value(
-
-            blueprint,
-
-            "delivery",
-
-        )
-
-        validation = _get_value(
-
-            blueprint,
-
-            "validation",
-
-        )
+        validation = _to_document(_get_value(blueprint, "validation"))
 
         # -----------------------------------------------------
 
@@ -332,16 +303,9 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
         # -----------------------------------------------------
 
-        generation_id = str(
-
-            generation.get(
-
-                "_id",
-
-                generation.get("id", ""),
-
-            )
-
+        generation_id = generation["generation_id"]
+        projects_repository.set_latest_generation(
+            project_id, uid, generation_id, datetime.now(timezone.utc)
         )
 
         # -----------------------------------------------------
@@ -509,3 +473,10 @@ def _get_nested_value(
         default,
 
     )
+
+
+def _to_document(value: Any) -> Any:
+    """Make Pydantic AI outputs safe for BSON storage and JSON responses."""
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return value

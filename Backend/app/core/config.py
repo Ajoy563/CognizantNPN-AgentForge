@@ -1,5 +1,8 @@
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+_backend_dir = Path(__file__).resolve().parents[2]
+_root_dir = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     # Application
@@ -24,7 +27,7 @@ class Settings(BaseSettings):
     ai_timeout_seconds: int = 300
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=(_backend_dir / ".env", _root_dir / ".env", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore"

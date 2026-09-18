@@ -1,72 +1,33 @@
+import logging
+from pathlib import Path
+import sys
 from typing import Any
 
 from app.core.errors import AppError
+from app.schemas.requests import GenerateRequest
 
-def generate_blueprint(request: Any) -> Any:
+logger = logging.getLogger(__name__)
 
-    """
 
-    Calls the AI team's public blueprint-generation service.
+import concurrent.futures
 
-    The backend communicates with the AI layer through a single
-
-    public function: generate_blueprint(request).
-
-    The internal CrewAI agents, tasks, workflow, validator,
-
-    and repair loop are owned by the AI team.
-
-    """
-    try:
-
-        # Import lazily so the backend can run even while the
-
-        # AI module is not yet connected.
-
-        
-        from ai.service import generate_blueprint as ai_generate_blueprint
-
-    except ImportError as exc:
-
-        raise AppError(
-
-            message="AI service is not available.",
-
-            status_code=500,
-
-            error_code="AI_GENERATION_ERROR",
-
-        ) from exc
+def generate_blueprint(request: GenerateRequest) -> Any:
+    repository_root = str(Path(__file__).resolve().parents[3])
+    if repository_root not in sys.path:
+        sys.path.insert(0, repository_root)
 
     try:
+        from ai.service import GenerateRequest as AIRequest
+        from ai.service import generate_blueprint as run_ai_workflow
 
-        result = ai_generate_blueprint(request)
-
-        if result is None:
-
-            raise AppError(
-
-                message="AI service returned an empty result.",
-
-                status_code=500,
-
-                error_code="AI_GENERATION_ERROR",
-
-            )
-
-        return result
-
-    except AppError:
-
-        raise
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(run_ai_workflow, AIRequest(**request.model_dump()))
+            return future.result()
     except Exception as exc:
-
+        logger.error("AI blueprint workflow exception: %s", exc, exc_info=True)
+        # Deliberately do not leak provider details or credentials to clients.
         raise AppError(
-
-            message="Failed to generate the solution blueprint.",
-
-            status_code=500,
-
+            f"The AI blueprint workflow could not complete: {exc}",
+            status_code=502,
             error_code="AI_GENERATION_ERROR",
-
         ) from exc
