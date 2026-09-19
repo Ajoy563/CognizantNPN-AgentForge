@@ -15,11 +15,20 @@ async def get_current_user(
     decoded_token = verify_id_token(credentials.credentials)
     uid = decoded_token["uid"]
     email = decoded_token.get("email", "")
+    name_from_token = decoded_token.get("name") or ""
+
+    now = datetime.now(timezone.utc)
+    on_insert = {"created_at": now}
+    if name_from_token:
+        # Only seeds the name on first sight; a user's own profile edit
+        # (POST /api/users/me) must not be overwritten by the identity
+        # provider's name on every subsequent login.
+        on_insert["name"] = name_from_token
 
     db = mongo.get_db()
     db.users.update_one(
         {"uid": uid},
-        {"$set": {"uid": uid, "email": email}, "$setOnInsert": {"created_at": datetime.now(timezone.utc)}},
+        {"$set": {"uid": uid, "email": email, "updated_at": now}, "$setOnInsert": on_insert},
         upsert=True
     )
 

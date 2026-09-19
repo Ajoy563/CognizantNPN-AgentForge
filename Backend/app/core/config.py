@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     # MongoDB Atlas
     mongodb_uri: str
+    mongodb_db_name: str = "solutionforge"
 
     # Firebase
     google_application_credentials: str = ""

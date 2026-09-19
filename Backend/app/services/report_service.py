@@ -1,1242 +1,136 @@
+"""PDF rendering for the generated blueprint.
 
-from io import BytesIO
+The styled HTML report produced by ai.report.html is the single source of
+truth: the PDF is that exact document printed by a headless Chromium
+browser, so the two can never drift apart in content or design. There is
+no second, simplified PDF renderer.
 
-from markdown import markdown
+Chrome or Edge is used through its `--print-to-pdf` switch, which needs no
+extra Python package and no downloaded browser. The print rules that keep
+tables, cards, and the architecture diagram intact live with the rest of
+the report CSS in ai/report/html.py.
+"""
 
-from jinja2 import Template
-
-from reportlab.lib.pagesizes import A4
-
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-
-from reportlab.lib.enums import TA_CENTER
-
-from reportlab.lib.units import mm
-
-from reportlab.platypus import (
-
-    SimpleDocTemplate,
-
-    Paragraph,
-
-    Spacer,
-
-    Table,
-
-    TableStyle,
-
-    PageBreak,
-
-)
-
-from reportlab.lib import colors
+import os
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 from app.core.errors import AppError
 
-# ============================================================
-
-# HTML REPORT TEMPLATE
-
-# ============================================================
-
-REPORT_TEMPLATE = """
-
-<!DOCTYPE html>
-
-<html lang="en">
-
-<head>
-
-    <meta charset="UTF-8">
-
-    <meta
-
-        name="viewport"
-
-        content="width=device-width, initial-scale=1.0"
-
-    >
-
-    <title>
-
-        SolutionForge AI - Solution Blueprint
-
-    </title>
-
-    <style>
-
-        body {
-
-            font-family: Arial, Helvetica, sans-serif;
-
-            line-height: 1.6;
-
-            max-width: 1000px;
-
-            margin: 0 auto;
-
-            padding: 40px 24px;
-
-            color: #222;
-
-            background: #ffffff;
-
-        }
-
-        h1 {
-
-            font-size: 32px;
-
-            margin-bottom: 24px;
-
-        }
-
-        h2 {
-
-            font-size: 24px;
-
-            margin-top: 32px;
-
-            border-bottom: 1px solid #ddd;
-
-            padding-bottom: 8px;
-
-        }
-
-        h3 {
-
-            font-size: 20px;
-
-            margin-top: 24px;
-
-        }
-
-        h4 {
-
-            font-size: 18px;
-
-            margin-top: 20px;
-
-        }
-
-        p {
-
-            margin: 12px 0;
-
-        }
-
-        ul,
-
-        ol {
-
-            padding-left: 28px;
-
-        }
-
-        li {
-
-            margin-bottom: 6px;
-
-        }
-
-        code {
-
-            font-family: monospace;
-
-            background: #f4f4f4;
-
-            padding: 2px 5px;
-
-            border-radius: 4px;
-
-        }
-
-        pre {
-
-            background: #f4f4f4;
-
-            padding: 16px;
-
-            overflow-x: auto;
-
-            border-radius: 6px;
-
-        }
-
-        pre code {
-
-            background: transparent;
-
-            padding: 0;
-
-        }
-
-        blockquote {
-
-            margin: 16px 0;
-
-            padding-left: 16px;
-
-            border-left: 4px solid #ccc;
-
-            color: #555;
-
-        }
-
-        table {
-
-            width: 100%;
-
-            border-collapse: collapse;
-
-            margin: 20px 0;
-
-        }
-
-        th,
-
-        td {
-
-            border: 1px solid #ddd;
-
-            padding: 10px;
-
-            text-align: left;
-
-        }
-
-        th {
-
-            background: #f4f4f4;
-
-        }
-
-        hr {
-
-            border: 0;
-
-            border-top: 1px solid #ddd;
-
-            margin: 30px 0;
-
-        }
-
-        @media print {
-
-            body {
-
-                max-width: none;
-
-                padding: 20px;
-
-            }
-
-        }
-
-    </style>
-
-</head>
-
-<body>
-
-    {{ content }}
-
-</body>
-
-</html>
-
-"""
-
-# ============================================================
-
-# HTML REPORT GENERATION
-
-# ============================================================
-
-def render_report(blueprint_md: str) -> str:
-
-    """
-
-    Convert a Markdown solution blueprint into
-
-    a styled HTML report.
-
-    Flow:
-
-        Markdown
-
-            ↓
-
-        HTML content
-
-            ↓
-
-        Jinja2 template
-
-            ↓
-
-        Styled HTML report
-
-    """
-
-    if not blueprint_md:
-
-        raise AppError(
-
-            message="Blueprint Markdown is empty.",
-
-            status_code=500,
-
-            error_code="REPORT_GENERATION_ERROR",
-
-        )
-
-    try:
-
-        # Convert Markdown into HTML
-
-        html_content = markdown(
-
-            blueprint_md,
-
-            extensions=[
-
-                "tables",
-
-                "fenced_code",
-
-                "toc",
-
-            ],
-
-        )
-
-        # Apply HTML template
-
-        template = Template(
-
-            REPORT_TEMPLATE
-
-        )
-
-        rendered_html = template.render(
-
-            content=html_content
-
-        )
-
-        if not rendered_html:
-
-            raise AppError(
-
-                message="Report rendering returned an empty result.",
-
-                status_code=500,
-
-                error_code="REPORT_GENERATION_ERROR",
-
-            )
-
-        return rendered_html
-
-    except AppError:
-
-        raise
-
-    except Exception as exc:
-
-        raise AppError(
-
-            message="Failed to generate HTML report.",
-
-            status_code=500,
-
-            error_code="REPORT_GENERATION_ERROR",
-
-        ) from exc
-
-# ============================================================
-
-# PDF REPORT GENERATION
-
-# ============================================================
-
-def generate_pdf(blueprint_md: str) -> bytes:
-
-    """
-
-    Convert the Markdown solution blueprint into a PDF.
-
-    The PDF is generated in memory and returned as bytes.
-
-    Flow:
-
-        Markdown
-
-            ↓
-
-        Markdown → HTML
-
-            ↓
-
-        Extract readable content
-
-            ↓
-
-        ReportLab
-
-            ↓
-
-        PDF bytes
-
-    """
-
-    if not blueprint_md:
-
-        raise AppError(
-
-            message="Blueprint Markdown is empty.",
-
-            status_code=500,
-
-            error_code="REPORT_GENERATION_ERROR",
-
-        )
-
-    try:
-
-        # ----------------------------------------------------
-
-        # Convert Markdown to HTML
-
-        # ----------------------------------------------------
-
-        html_content = markdown(
-
-            blueprint_md,
-
-            extensions=[
-
-                "tables",
-
-                "fenced_code",
-
-            ],
-
-        )
-
-        # ----------------------------------------------------
-
-        # Create PDF in memory
-
-        # ----------------------------------------------------
-
-        pdf_buffer = BytesIO()
-
-        document = SimpleDocTemplate(
-
-            pdf_buffer,
-
-            pagesize=A4,
-
-            rightMargin=18 * mm,
-
-            leftMargin=18 * mm,
-
-            topMargin=18 * mm,
-
-            bottomMargin=18 * mm,
-
-            title="SolutionForge AI - Solution Blueprint",
-
-            author="SolutionForge AI",
-
-        )
-
-        # ----------------------------------------------------
-
-        # PDF styles
-
-        # ----------------------------------------------------
-
-        styles = getSampleStyleSheet()
-
-        title_style = ParagraphStyle(
-
-            "CustomTitle",
-
-            parent=styles["Title"],
-
-            fontSize=24,
-
-            leading=30,
-
-            alignment=TA_CENTER,
-
-            spaceAfter=20,
-
-        )
-
-        heading1_style = ParagraphStyle(
-
-            "CustomHeading1",
-
-            parent=styles["Heading1"],
-
-            fontSize=18,
-
-            leading=22,
-
-            spaceBefore=16,
-
-            spaceAfter=10,
-
-        )
-
-        heading2_style = ParagraphStyle(
-
-            "CustomHeading2",
-
-            parent=styles["Heading2"],
-
-            fontSize=15,
-
-            leading=19,
-
-            spaceBefore=12,
-
-            spaceAfter=8,
-
-        )
-
-        heading3_style = ParagraphStyle(
-
-            "CustomHeading3",
-
-            parent=styles["Heading3"],
-
-            fontSize=13,
-
-            leading=17,
-
-            spaceBefore=10,
-
-            spaceAfter=6,
-
-        )
-
-        body_style = ParagraphStyle(
-
-            "CustomBody",
-
-            parent=styles["BodyText"],
-
-            fontSize=10,
-
-            leading=15,
-
-            spaceAfter=7,
-
-        )
-
-        bullet_style = ParagraphStyle(
-
-            "CustomBullet",
-
-            parent=body_style,
-
-            leftIndent=15,
-
-            firstLineIndent=-8,
-
-            spaceAfter=4,
-
-        )
-
-        code_style = ParagraphStyle(
-
-            "CustomCode",
-
-            parent=body_style,
-
-            fontName="Courier",
-
-            fontSize=8,
-
-            leading=11,
-
-            leftIndent=10,
-
-            rightIndent=10,
-
-            spaceBefore=6,
-
-            spaceAfter=6,
-
-        )
-
-        # ----------------------------------------------------
-
-        # Build PDF content
-
-        # ----------------------------------------------------
-
-        story = []
-
-        # Split Markdown into lines
-
-        lines = blueprint_md.splitlines()
-
-        first_heading = True
-
-        for line in lines:
-
-            stripped = line.strip()
-
-            # Ignore empty lines
-
-            if not stripped:
-
-                story.append(
-
-                    Spacer(1, 4)
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # H1
-
-            # ------------------------------------------------
-
-            if stripped.startswith("# "):
-
-                text = stripped[2:].strip()
-
-                if first_heading:
-
-                    story.append(
-
-                        Paragraph(
-
-                            _escape_pdf_text(text),
-
-                            title_style,
-
-                        )
-
-                    )
-
-                    first_heading = False
-
-                else:
-
-                    story.append(
-
-                        Paragraph(
-
-                            _escape_pdf_text(text),
-
-                            heading1_style,
-
-                        )
-
-                    )
-
-                continue
-
-            # ------------------------------------------------
-
-            # H2
-
-            # ------------------------------------------------
-
-            if stripped.startswith("## "):
-
-                text = stripped[3:].strip()
-
-                story.append(
-
-                    Paragraph(
-
-                        _escape_pdf_text(text),
-
-                        heading1_style,
-
-                    )
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # H3
-
-            # ------------------------------------------------
-
-            if stripped.startswith("### "):
-
-                text = stripped[4:].strip()
-
-                story.append(
-
-                    Paragraph(
-
-                        _escape_pdf_text(text),
-
-                        heading2_style,
-
-                    )
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # H4
-
-            # ------------------------------------------------
-
-            if stripped.startswith("#### "):
-
-                text = stripped[5:].strip()
-
-                story.append(
-
-                    Paragraph(
-
-                        _escape_pdf_text(text),
-
-                        heading3_style,
-
-                    )
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # Bullet points
-
-            # ------------------------------------------------
-
-            if stripped.startswith("- "):
-
-                text = stripped[2:].strip()
-
-                story.append(
-
-                    Paragraph(
-
-                        "• "
-
-                        + _escape_pdf_text(text),
-
-                        bullet_style,
-
-                    )
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # Numbered list
-
-            # ------------------------------------------------
-
-            if _is_numbered_list(stripped):
-
-                text = _remove_number_prefix(
-
-                    stripped
-
-                )
-
-                story.append(
-
-                    Paragraph(
-
-                        _escape_pdf_text(text),
-
-                        bullet_style,
-
-                    )
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # Horizontal rule
-
-            # ------------------------------------------------
-
-            if stripped in {
-
-                "---",
-
-                "***",
-
-                "___",
-
-            }:
-
-                story.append(
-
-                    Spacer(1, 8)
-
-                )
-
-                continue
-
-            # ------------------------------------------------
-
-            # Code block
-
-            # ------------------------------------------------
-
-            if stripped.startswith("```"):
-
-                continue
-
-            # ------------------------------------------------
-
-            # Markdown table
-
-            # ------------------------------------------------
-
-            if "|" in stripped:
-
-                # Table handling is intentionally kept
-
-                # simple for the MVP.
-
-                table_data = _parse_table_row(
-
-                    stripped
-
-                )
-
-                if table_data:
-
-                    table = Table(
-
-                        [table_data],
-
-                        repeatRows=0,
-
-                    )
-
-                    table.setStyle(
-
-                        TableStyle(
-
-                            [
-
-                                (
-
-                                    "GRID",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    0.5,
-
-                                    colors.grey,
-
-                                ),
-
-                                (
-
-                                    "VALIGN",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    "TOP",
-
-                                ),
-
-                                (
-
-                                    "FONTNAME",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    "Helvetica",
-
-                                ),
-
-                                (
-
-                                    "FONTSIZE",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    8,
-
-                                ),
-
-                                (
-
-                                    "LEFTPADDING",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    6,
-
-                                ),
-
-                                (
-
-                                    "RIGHTPADDING",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    6,
-
-                                ),
-
-                                (
-
-                                    "TOPPADDING",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    5,
-
-                                ),
-
-                                (
-
-                                    "BOTTOMPADDING",
-
-                                    (0, 0),
-
-                                    (-1, -1),
-
-                                    5,
-
-                                ),
-
-                            ]
-
-                        )
-
-                    )
-
-                    story.append(table)
-
-                    story.append(
-
-                        Spacer(1, 8)
-
-                    )
-
-                    continue
-
-            # ------------------------------------------------
-
-            # Normal paragraph
-
-            # ------------------------------------------------
-
-            text = _format_inline_markdown(
-
-                stripped
-
-            )
-
-            story.append(
-
-                Paragraph(
-
-                    text,
-
-                    body_style,
-
-                )
-
-            )
-
-        # ----------------------------------------------------
-
-        # Generate PDF
-
-        # ----------------------------------------------------
-
-        document.build(
-
-            story
-
-        )
-
-        pdf_bytes = pdf_buffer.getvalue()
-
-        pdf_buffer.close()
-
-        if not pdf_bytes:
-
-            raise AppError(
-
-                message="PDF generation returned an empty result.",
-
-                status_code=500,
-
-                error_code="REPORT_GENERATION_ERROR",
-
-            )
-
-        return pdf_bytes
-
-    except AppError:
-
-        raise
-
-    except Exception as exc:
-
-        raise AppError(
-
-            message="Failed to generate PDF report.",
-
-            status_code=500,
-
-            error_code="REPORT_GENERATION_ERROR",
-
-        ) from exc
-
-# ============================================================
-
-# HELPER FUNCTIONS
-
-# ============================================================
-
-def _escape_pdf_text(text: str) -> str:
-
-    """
-
-    Escape special characters for ReportLab Paragraph.
-
-    """
-
-    if not text:
-
-        return ""
-
-    text = str(text)
-
-    text = (
-
-        text.replace("&", "&amp;")
-
-        .replace("<", "&lt;")
-
-        .replace(">", "&gt;")
-
+# Checked in order. CHROME_BINARY overrides everything for unusual installs.
+_BROWSER_CANDIDATES = (
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+)
+
+_PDF_TIMEOUT_SECONDS = 120
+
+
+def find_browser() -> str:
+    """Path to a Chromium-family browser able to print the report."""
+    override = os.getenv("CHROME_BINARY")
+    if override and Path(override).exists():
+        return override
+
+    for name in ("chrome", "chromium", "google-chrome", "msedge"):
+        found = shutil.which(name)
+        if found:
+            return found
+
+    for candidate in _BROWSER_CANDIDATES:
+        if Path(candidate).exists():
+            return candidate
+
+    raise AppError(
+        message=(
+            "No Chrome or Edge installation was found to render the PDF. "
+            "Set the CHROME_BINARY environment variable to a Chromium-family "
+            "browser executable."
+        ),
+        status_code=500,
+        error_code="REPORT_GENERATION_ERROR",
     )
 
-    return text
 
-def _format_inline_markdown(text: str) -> str:
+def generate_pdf(blueprint_html: str) -> bytes:
+    """Print the already-styled HTML report to PDF, unchanged.
 
+    `blueprint_html` is the self-contained report from
+    ai.report.html.render_blueprint_html — it embeds its own CSS and SVG,
+    so the browser never needs network access to render it.
     """
-
-    Convert basic Markdown formatting into
-
-    ReportLab-compatible inline formatting.
-
-    """
-
-    text = _escape_pdf_text(text)
-
-    # Bold
-
-    while "**" in text:
-
-        parts = text.split("**", 2)
-
-        if len(parts) < 3:
-
-            break
-
-        text = (
-
-            parts[0]
-
-            + "<b>"
-
-            + parts[1]
-
-            + "</b>"
-
-            + parts[2]
-
+    if not blueprint_html:
+        raise AppError(
+            message="Blueprint HTML is empty.",
+            status_code=500,
+            error_code="REPORT_GENERATION_ERROR",
         )
 
-    # Inline code
+    browser = find_browser()
 
-    while "`" in text:
+    with tempfile.TemporaryDirectory(prefix="solutionforge-pdf-") as workdir:
+        source = Path(workdir) / "blueprint.html"
+        target = Path(workdir) / "blueprint.pdf"
+        source.write_text(blueprint_html, encoding="utf-8")
 
-        parts = text.split("`", 2)
+        command = [
+            browser,
+            "--headless=new",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--no-pdf-header-footer",
+            "--print-to-pdf-no-header",
+            # Let webfonts/layout settle before the snapshot is taken.
+            "--run-all-compositor-stages-before-draw",
+            "--virtual-time-budget=10000",
+            f"--user-data-dir={Path(workdir) / 'profile'}",
+            f"--print-to-pdf={target}",
+            source.as_uri(),
+        ]
 
-        if len(parts) < 3:
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=_PDF_TIMEOUT_SECONDS,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            raise AppError(
+                message="PDF rendering timed out.",
+                status_code=500,
+                error_code="REPORT_GENERATION_ERROR",
+            ) from exc
+        except OSError as exc:
+            raise AppError(
+                message="The PDF renderer could not be started.",
+                status_code=500,
+                error_code="REPORT_GENERATION_ERROR",
+            ) from exc
 
-            break
+        if not target.exists():
+            detail = (result.stderr or b"").decode("utf-8", "replace").strip()[-400:]
+            raise AppError(
+                message=f"PDF rendering produced no output. {detail}".strip(),
+                status_code=500,
+                error_code="REPORT_GENERATION_ERROR",
+            )
 
-        text = (
+        pdf_bytes = target.read_bytes()
 
-            parts[0]
-
-            + "<font name='Courier'>"
-
-            + parts[1]
-
-            + "</font>"
-
-            + parts[2]
-
+    if not pdf_bytes.startswith(b"%PDF"):
+        raise AppError(
+            message="PDF rendering returned a malformed document.",
+            status_code=500,
+            error_code="REPORT_GENERATION_ERROR",
         )
 
-    return text
-
-def _is_numbered_list(text: str) -> bool:
-
-    """
-
-    Check whether a line is a numbered Markdown list.
-
-    Examples:
-
-        1. First item
-
-        2. Second item
-
-    """
-
-    if len(text) < 3:
-
-        return False
-
-    index = 0
-
-    while index < len(text) and text[index].isdigit():
-
-        index += 1
-
-    return (
-
-        index > 0
-
-        and index < len(text)
-
-        and text[index] == "."
-
-        and index + 1 < len(text)
-
-        and text[index + 1] == " "
-
-    )
-
-def _remove_number_prefix(text: str) -> str:
-
-    """
-
-    Remove the number from a numbered Markdown list.
-
-    """
-
-    index = 0
-
-    while index < len(text) and text[index].isdigit():
-
-        index += 1
-
-    if (
-
-        index < len(text)
-
-        and text[index] == "."
-
-    ):
-
-        return text[index + 1:].strip()
-
-    return text
-
-def _parse_table_row(text: str) -> list[str]:
-
-    """
-
-    Parse one Markdown table row.
-
-    Example:
-
-        | Name | Technology | Purpose |
-
-    Returns:
-
-        ["Name", "Technology", "Purpose"]
-
-    """
-
-    if "|" not in text:
-
-        return []
-
-    parts = text.split("|")
-
-    # Remove empty first/last elements
-
-    if parts and not parts[0].strip():
-
-        parts = parts[1:]
-
-    if parts and not parts[-1].strip():
-
-        parts = parts[:-1]
-
-    cleaned = []
-
-    for part in parts:
-
-        value = part.strip()
-
-        # Skip Markdown separator rows
-
-        if value and all(
-
-            character in "-: "
-
-            for character in value
-
-        ):
-
-            return []
-
-        cleaned.append(
-
-            _escape_pdf_text(value)
-
-        )
-
-    return cleaned
+    return pdf_bytes

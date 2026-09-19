@@ -8,8 +8,6 @@ from app.core.errors import AppError
 
 from app.services.ai_service import generate_blueprint
 
-from app.services.report_service import render_report, generate_pdf
-
 from app.db.repositories import generations as generations_repository
 from app.db.repositories import projects as projects_repository
 
@@ -133,8 +131,6 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
         delivery = _to_document(_get_value(blueprint, "delivery"))
 
-        validation = _to_document(_get_value(blueprint, "validation"))
-
         # -----------------------------------------------------
 
         # 6. Extract Markdown blueprint
@@ -181,41 +177,30 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
         )
 
-        repair_iterations = _get_nested_value(
+        # -----------------------------------------------------
 
+        # 8. Extract the pre-rendered HTML report
+        #
+        # ai.service.generate_blueprint() already produces a
+        # professional, self-contained HTML report (embedded
+        # architecture diagram, traceability and technology
+        # matrices). Re-deriving HTML from Markdown here would throw
+        # all of that away, so we reuse it as-is.
+
+        # -----------------------------------------------------
+
+        blueprint_html = _get_value(
             blueprint,
-
-            "meta",
-
-            "repair_iterations",
-
-            default=0,
-
+            "blueprint_html",
+            default="",
         )
 
-        # -----------------------------------------------------
-
-        # 8. Generate HTML report
-
-        # -----------------------------------------------------
-
-        blueprint_html = render_report(
-
-            blueprint_md
-
-        )
-
-        # -----------------------------------------------------
-
-        # 9. Generate PDF report
-
-        # -----------------------------------------------------
-
-        blueprint_pdf = generate_pdf(
-
-            blueprint_md
-
-        )
+        if not blueprint_html:
+            raise AppError(
+                message="AI service did not return blueprint HTML.",
+                status_code=500,
+                error_code="AI_GENERATION_ERROR",
+            )
 
         # -----------------------------------------------------
 
@@ -245,6 +230,8 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
             "status": "success",
 
+            "project_inputs": request.model_dump(),
+
             "requirements": requirements,
 
             "architecture": architecture,
@@ -253,17 +240,9 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
             "delivery": delivery,
 
-            "validation": validation,
-
             "blueprint_markdown": blueprint_md,
 
             "blueprint_html": blueprint_html,
-
-            # PDF is stored as bytes for the generated report.
-
-            "blueprint_pdf": blueprint_pdf,
-
-            "repair_iterations": repair_iterations,
 
             "model": model,
 
@@ -330,8 +309,6 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
 
             "delivery": delivery,
 
-            "validation": validation,
-
             "blueprint_md": blueprint_md,
 
             "blueprint_html": blueprint_html,
@@ -341,8 +318,6 @@ def generate_solution(uid: str, project_id: str, request: Any) -> dict:
                 "model": model,
 
                 "duration_seconds": duration_seconds,
-
-                "repair_iterations": repair_iterations,
 
             },
 

@@ -17,6 +17,7 @@ from app.schemas.responses import (
 )
 from app.services import generation_service
 from app.services import project_service
+from app.services import report_service
 
 router = APIRouter(prefix="/api")
 
@@ -46,13 +47,7 @@ async def generate_blueprint(
         request=request
     )
 
-    validation = blueprint["validation"]
-    metadata = blueprint["meta"]
-    return BlueprintResponse(
-        validation_status=validation.get("status", "unknown"),
-        blueprint=blueprint,
-        repair_iterations=metadata.get("repair_iterations", 0)
-    )
+    return BlueprintResponse(blueprint=blueprint)
 
 @router.get("/projects", response_model=list[ProjectSummary])
 async def get_projects(
@@ -92,8 +87,6 @@ async def get_project(
             generation_id=item["generation_id"],
             project_id=item["project_id"],
             created_at=item["created_at"].isoformat(),
-            validation_status=item["validation"].get("status", "unknown") if item.get("validation") else "unknown",
-            repair_iterations=item.get("repair_iterations", 0),
         )
         for item in gens
     ]
@@ -122,8 +115,6 @@ async def get_generation_history(
             generation_id=item["generation_id"],
             project_id=item["project_id"],
             created_at=item["created_at"].isoformat(),
-            validation_status=item["validation"].get("status", "unknown") if item.get("validation") else "unknown",
-            repair_iterations=item.get("repair_iterations", 0),
         )
         for item in gens
     ]
@@ -151,11 +142,16 @@ async def download_pdf(
 ):
     firebase_uid = current_user["uid"]
     generation = generations_repository.get_generation(generation_id, firebase_uid)
-    if not generation or not generation.get("blueprint_pdf"):
-        raise HTTPException(status_code=404, detail="PDF not found.")
+    if not generation or not generation.get("blueprint_html"):
+        raise HTTPException(status_code=404, detail="Generation not found.")
+
+    # Printed on demand from the stored HTML report, so the PDF is always
+    # the same document the user sees on screen — and generation itself
+    # never pays the rendering cost.
+    pdf_bytes = report_service.generate_pdf(generation["blueprint_html"])
 
     return Response(
-        content=generation["blueprint_pdf"],
+        content=pdf_bytes,
         media_type="application/pdf",
         headers={
             "Content-Disposition": f'attachment; filename="solutionforge-{generation_id}.pdf"'
@@ -205,14 +201,17 @@ async def get_generation_detail(
     # Remove binary data from response
     generation.pop("blueprint_pdf", None)
 
-    # We also need the original project inputs!
-    project = project_service.get_project(generation["project_id"], firebase_uid)
-    if project:
-        generation["project_inputs"] = {
-            key: project.get(key) for key in (
-                "business_idea", "tech_preference", "cloud_preference",
-                "expected_daily_traffic", "delivery_timeline_months", "country",
-            )
-        }
+    # Newer generations embed their own project_inputs (see
+    # generation_service.generate_solution). Older records predating that
+    # change fall back to joining the parent project for the same fields.
+    if not generation.get("project_inputs"):
+        project = project_service.get_project(generation["project_id"], firebase_uid)
+        if project:
+            generation["project_inputs"] = {
+                key: project.get(key) for key in (
+                    "business_idea", "tech_preference", "cloud_preference",
+                    "expected_daily_traffic", "delivery_timeline_months", "country",
+                )
+            }
 
     return generation
