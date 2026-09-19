@@ -3,11 +3,11 @@
 Consumes the Business Analyst's RequirementsOutput, the Solution
 Architect's ArchitectureOutput, and the Technology Advisor's
 TechnologyOutput as upstream context, plus the original delivery
-timeline, and produces a structured result conforming to
+timeline, and produces a structured, traceable result conforming to
 ai.schemas.delivery.DeliveryOutput.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from ai.schemas.architecture import ArchitectureOutput
 from ai.schemas.delivery import DeliveryOutput
@@ -18,21 +18,35 @@ OUTPUT_SCHEMA = DeliveryOutput
 
 DELIVERY_EXPECTED_OUTPUT = (
     "A single JSON object matching the DeliveryOutput schema exactly, with "
-    "these keys and no others: workstreams (list of strings), team_roles "
-    "(list of objects, each with role and count), timeline (list of objects, "
-    "each with phase, duration, deliverables), dependencies (list of "
-    "strings), testing_strategy (list of strings), deployment_strategy (list "
-    "of strings), risks (list of objects, each with risk, impact, "
-    "mitigation), effort_complexity (string), cost_estimate (object with "
-    "estimated_effort, estimated_team_cost, assumptions), future_evolution "
-    "(list of strings). cost_estimate.estimated_effort and "
-    "cost_estimate.estimated_team_cost must each be an indicative range or a "
-    "clearly qualified statement such as 'Not enough information for a "
-    "reliable estimate' — never a single precise number presented as fact. "
-    "This cost_estimate covers only implementation/team cost — never the "
-    "infrastructure/service cost, which the Technology Advisor already "
-    "provided. Every item must be concrete and specific — no placeholders, "
-    "no boilerplate."
+    "these keys and no others: workstreams (list of objects: id, name, "
+    "purpose, activities, dependencies, deliverable, addresses, effort), "
+    "milestones (list of strings), dependencies (list "
+    "of strings), team_roles (list of objects: role, count), timeline "
+    "(list of objects: phase, duration, milestone, deliverables), "
+    "testing_strategy (list of strings), integration_testing (list of "
+    "strings), uat_strategy (list of strings), deployment_strategy (list "
+    "of strings), ci_cd (list of strings), monitoring (list of strings), "
+    "rollback_strategy (list of strings), risks (list of objects: risk, "
+    "impact, mitigation), effort_complexity (string), cost_estimate "
+    "(object with estimated_effort, estimated_team_cost, assumptions), "
+    "future_evolution (list of strings). Every workstream's id must be "
+    "TASK-001, TASK-002, ... unique, never reused, with a non-empty "
+    "`addresses` list of real requirement and/or component ids (REQ-xxx / "
+    "ARCH-xxx) from the input — never invented. Every workstream's "
+    "purpose and deliverable must be non-empty, and `activities` must "
+    "list its major concrete pieces of work. `risks` must contain 4 to 6 "
+    "entries, each with a real impact and a specific mitigation. "
+    "cost_estimate."
+    "estimated_effort and cost_estimate.estimated_team_cost must each be "
+    "an indicative range or a clearly qualified statement such as 'Not "
+    "enough information for a reliable estimate' — never a single "
+    "precise number presented as fact. This cost_estimate covers only "
+    "implementation/team cost — never the infrastructure/service cost, "
+    "which the Technology Advisor already provided. The total effort "
+    "implied by workstreams and timeline must be realistic for the team "
+    "size in team_roles — never claim more scope than the team and "
+    "timeline can plausibly deliver. Every item must be concrete and "
+    "specific — no placeholders, no boilerplate."
 )
 
 
@@ -43,7 +57,6 @@ def build_delivery_task(
     architecture: ArchitectureOutput,
     technology: TechnologyOutput,
     delivery_timeline_months: int,
-    repair_issues: Optional[tuple] = None,
 ) -> Any:
     """Construct the Delivery Planner's task for one generation request.
 
@@ -53,12 +66,6 @@ def build_delivery_task(
     Analyst's, Solution Architect's, and Technology Advisor's structured
     outputs for this same request — they are the Delivery Planner's
     upstream context.
-
-    `repair_issues`: optional Consistency Validator issue text for this
-    stage specifically (e.g. `RepairPlan.issues_by_owner["Delivery Planner"]`
-    from `ai.repair`), used only when this task is a targeted repair rerun.
-    `None`/omitted (the default) reproduces the original, non-repair prompt
-    exactly — normal initial generation is unaffected.
     """
     from crewai import Task  # local import: keeps this module importable/testable
     # even in environments where crewai itself cannot be installed.
@@ -68,7 +75,6 @@ def build_delivery_task(
         architecture=architecture,
         technology=technology,
         delivery_timeline_months=delivery_timeline_months,
-        repair_issues=repair_issues,
     )
     return Task(
         description=description,
@@ -78,56 +84,40 @@ def build_delivery_task(
     )
 
 
-def _bullets(label: str, items: list[str]) -> str:
-    if not items:
-        return f"{label}: (none)"
-    rendered = "\n".join(f"  - {item}" for item in items)
-    return f"{label}:\n{rendered}"
-
-
 def _summarize_requirements(requirements: RequirementsOutput) -> str:
+    requirements_rendered = "\n".join(
+        f"  - {req.id} [{req.priority}]: {req.text}"
+        for req in requirements.requirements
+    )
     return "\n".join(
         [
             f"Problem statement: {requirements.problem}",
-            _bullets("Functional requirements", requirements.functional_requirements),
-            _bullets(
-                "Non-functional requirements", requirements.non_functional_requirements
-            ),
-            _bullets("MVP priorities", requirements.mvp_priorities),
-            _bullets("Constraints", requirements.constraints),
-            _bullets("Business risks", requirements.risks),
+            f"Requirements:\n{requirements_rendered}",
+            f"MVP requirement ids: {', '.join(requirements.mvp_requirement_ids)}",
         ]
     )
 
 
 def _summarize_architecture(architecture: ArchitectureOutput) -> str:
     components_rendered = "\n".join(
-        f"  - {component.name}: {component.responsibility}"
-        for component in architecture.components
+        f"  - {c.id}: {c.name} — {c.responsibility}" for c in architecture.components
     )
     return "\n".join(
         [
             f"Architecture style: {architecture.architecture_style}",
             f"Components:\n{components_rendered}",
-            _bullets("Storage approach", architecture.storage),
-            _bullets("Security controls", architecture.security),
-            _bullets("Scalability approach", architecture.scalability),
-            _bullets("MVP architecture", architecture.mvp_architecture),
         ]
     )
 
 
 def _summarize_technology(technology: TechnologyOutput) -> str:
-    recommendations_rendered = "\n".join(
-        f"  - {rec.component}: {rec.recommended} ({rec.reason})"
-        for rec in technology.recommendations
+    decisions_rendered = "\n".join(
+        f"  - {d.id}: {d.technology} ({d.reason}) [supports: {', '.join(d.supports)}]"
+        for d in technology.decisions
     )
     return "\n".join(
         [
-            f"Technology recommendations:\n{recommendations_rendered}",
-            f"Cloud fit: {technology.cloud_fit}",
-            f"Open-source fit: {technology.open_source_fit}",
-            f"Lock-in considerations: {technology.lock_in_considerations}",
+            f"Technology decisions:\n{decisions_rendered}",
             "Technology Advisor's infrastructure/service cost estimate "
             "(already provided — do not duplicate or replace this):",
             f"  - Infrastructure (monthly): "
@@ -138,61 +128,61 @@ def _summarize_technology(technology: TechnologyOutput) -> str:
     )
 
 
-def _repair_context_section(repair_issues: Optional[tuple]) -> str:
-    if not repair_issues:
-        return ""
-    rendered = "\n".join(f"  - {issue}" for issue in repair_issues)
-    return (
-        "\n\nThis is a targeted repair. The Consistency Validator found the "
-        "following issue(s) with your previous output for this stage — fix "
-        "them specifically, while keeping everything else that was already "
-        "correct:\n"
-        f"{rendered}"
-    )
-
-
 def _build_description(
     *,
     requirements: RequirementsOutput,
     architecture: ArchitectureOutput,
     technology: TechnologyOutput,
     delivery_timeline_months: int,
-    repair_issues: Optional[tuple] = None,
 ) -> str:
     return (
-        "Turn the requirements, architecture, and technology recommendations "
-        "below into an executable delivery plan. Treat all three as ground "
-        "truth — do not redefine the business requirements, do not redesign "
-        "the architecture, and do not choose a different technology stack. "
-        "Do not perform consistency validation — that belongs to another "
-        "specialist.\n\n"
+        "Turn the requirements, architecture, and technology decisions "
+        "below into an executable, traceable delivery plan. Treat all "
+        "three as ground truth — do not redefine the business "
+        "requirements, do not redesign the architecture, and do not "
+        "choose a different technology stack.\n\n"
         f"{_summarize_requirements(requirements)}\n\n"
         f"{_summarize_architecture(architecture)}\n\n"
         f"{_summarize_technology(technology)}\n\n"
         f"Delivery timeline (months): {delivery_timeline_months}\n\n"
         "Produce:\n"
-        "1. Implementation workstreams that cover the components and MVP "
-        "priorities above.\n"
-        "2. Team roles and counts, sized to the scope and complexity — a "
-        "plausible team for a project of this size and timeline.\n"
-        "3. A timeline of phases and milestones that fits inside the stated "
-        "delivery timeline, each with its deliverables.\n"
-        "4. Dependencies and prerequisites between workstreams or on "
-        "external factors.\n"
-        "5. A testing strategy grounded in the actual architecture and "
-        "technology stack above.\n"
-        "6. A deployment/release strategy grounded in the actual "
-        "architecture and technology stack above.\n"
-        "7. Delivery risks, each with a concrete mitigation.\n"
-        "8. An effort and complexity assessment for the project.\n"
-        "9. An indicative implementation/team cost estimate — a range or a "
-        "clearly qualified statement, never false precision — with the "
-        "assumptions behind it. This is implementation/team cost only: do "
-        "not duplicate or replace the Technology Advisor's infrastructure/"
-        "service cost estimate above, which is already provided.\n"
-        "10. Future evolution: how the delivery plan could extend if scope "
-        "or timeline constraints change later.\n\n"
-        "The full plan — every workstream, phase, and milestone — must fit "
-        "inside the stated delivery timeline. Keep every item concrete and "
-        "specific to this project — no placeholders, no boilerplate."
-    ) + _repair_context_section(repair_issues)
+        "1. Implementation workstreams. For each one give: purpose (why "
+        "this workstream exists), activities (its major concrete pieces "
+        "of work), dependencies (what must be in place before it can "
+        "start — name other TASK ids where that is what you mean, or "
+        "'None' when it can start immediately), deliverable (the "
+        "tangible output or milestone it produces), effort (a realistic "
+        "estimate), and an `addresses` list naming the requirement "
+        "and/or component ids it covers. Plan "
+        "the MVP that can actually be built in the stated timeline — "
+        "not every capability the system could eventually have. Leave "
+        "post-MVP capabilities to future_evolution instead of giving "
+        "them workstreams.\n"
+        "2. Milestones, dependencies, and team roles/counts sized to the "
+        "scope and complexity — a plausible team for a project of this "
+        "size and timeline. The total effort your workstreams imply must "
+        "be realistic for that team size within the stated timeline.\n"
+        "3. A timeline of phases, each with a duration, a concrete "
+        "milestone, and its deliverables, fitting inside the stated "
+        "delivery timeline.\n"
+        "4. A real testing strategy: unit testing, integration testing, "
+        "and a UAT strategy as separate, concrete concerns.\n"
+        "5. Deployment strategy, CI/CD, monitoring, and a rollback "
+        "strategy — grounded in the actual architecture and technology "
+        "stack above.\n"
+        "6. Between 4 and 6 delivery risks that genuinely threaten THIS "
+        "project, each with its real impact and a concrete, specific "
+        "mitigation — no generic 'communicate regularly' filler, and an "
+        "effort/complexity assessment.\n"
+        "7. An indicative implementation/team cost estimate — a range "
+        "or a clearly qualified statement, never false precision — with "
+        "the assumptions behind it. This is implementation/team cost "
+        "only: do not duplicate or replace the Technology Advisor's "
+        "infrastructure/service cost estimate above.\n"
+        "8. Future evolution: how the delivery plan could extend if "
+        "scope or timeline constraints change later.\n\n"
+        "The full plan — every workstream, phase, and milestone — must "
+        "fit inside the stated delivery timeline and be realistic for "
+        "the team you defined. Keep every item concrete and specific to "
+        "this project — no placeholders, no boilerplate."
+    )

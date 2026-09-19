@@ -1,6 +1,22 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class Workstream(BaseModel):
+    """One traceable implementation workstream. `addresses` links back to
+    Requirement and/or Component ids (REQ-xxx / ARCH-xxx)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(pattern=r"^TASK-\d{3}$")
+    name: str = Field(min_length=1)
+    purpose: str = Field(min_length=1)
+    activities: list[str]
+    dependencies: list[str]
+    deliverable: str = Field(min_length=1)
+    addresses: list[str] = Field(min_length=1)
+    effort: str = Field(min_length=1)
+
+
 class TeamRole(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -13,6 +29,7 @@ class TimelinePhase(BaseModel):
 
     phase: str = Field(min_length=1)
     duration: str = Field(min_length=1)
+    milestone: str = Field(min_length=1)
     deliverables: list[str]
 
 
@@ -39,12 +56,18 @@ class DeliveryOutput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    workstreams: list[str]
-    team_roles: list[TeamRole]
-    timeline: list[TimelinePhase]
+    workstreams: list[Workstream] = Field(min_length=1)
+    milestones: list[str]
     dependencies: list[str]
+    team_roles: list[TeamRole] = Field(min_length=1)
+    timeline: list[TimelinePhase] = Field(min_length=1)
     testing_strategy: list[str]
+    integration_testing: list[str]
+    uat_strategy: list[str]
     deployment_strategy: list[str]
+    ci_cd: list[str]
+    monitoring: list[str]
+    rollback_strategy: list[str]
     risks: list[DeliveryRisk]
     effort_complexity: str = Field(min_length=1)
     cost_estimate: DeliveryCostEstimate
