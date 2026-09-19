@@ -1,0 +1,63 @@
+# ---------------------------------------------------------------
+# Repo-wide ignores. ai/, Backend/ and Frontend/ each have their own
+# .gitignore with folder-specific rules on top of these.
+# ---------------------------------------------------------------
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment variables / secrets
+.env
+.env.*
+!.env.example
+
+# Firebase / cloud service-account keys
+*serviceAccount*.json
+*firebase-adminsdk*.json
+service-account*.json
+
+# Logs
+*.log
+logs/
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Packaging / build output
+*.egg-info/
+dist/
+build/
+
+# Coverage
+.coverage
+htmlcov/
+
+# Local tooling state
+.claude/settings.local.json
+.bolt/
+
+# Scratch / generated report files
+*_report.html
+*_report.md
+*_report.pdf
+
+# Not published to GitHub (internal spec docs / test suite)
+docs/
+ai/tests/
