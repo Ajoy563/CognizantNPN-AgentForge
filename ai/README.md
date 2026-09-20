@@ -230,4 +230,4 @@ correction the repaired stage produces doesn't always satisfy the
 Validator on the first few tries. Not yet root-caused.
 
 Not yet built: `service.py`'s caller (FastAPI), Firebase auth, MongoDB
-persistence, Streamlit frontend, Serper/web-search integration.
+persistence, Streamlit frontend, Serper/web-search integration
