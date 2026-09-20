@@ -11,4 +11,4 @@ This folder contains the Streamlit version of the SolutionForge AI frontend. It 
 - `styles/style.css` — visual system
 - `assets/` — optional brand assets
 
-The authentication service uses Supabase email/password auth when the existing project environment values are available. Blueprint generation is kept behind `services/api_client.py` so the backend can be connected without changing the UI.
+The authentication service uses Supabase email/password auth when the existing project environment values are available. Blueprint generation is kept behind `services/api_client.py` so the backend can be connected without changing the UI
