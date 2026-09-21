@@ -12,6 +12,7 @@ WORKDIR /app
 # Install backend Python dependencies
 COPY Backend/requirements.txt ./Backend/requirements.txt
 RUN pip install --no-cache-dir -r Backend/requirements.txt
+RUN python -c "import crewai; print('CrewAI installed:', crewai.__version__)"
 
 # Copy the complete project because Backend imports the root-level ai package
 COPY . .
