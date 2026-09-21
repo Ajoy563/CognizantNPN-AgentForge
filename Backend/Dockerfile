@@ -1,24 +1,23 @@
-FROM python:3.13-slim
+FROM python:3.13-slim-bookworm
 
-# Install Chromium and required system dependencies
-RUN apt-get update && apt-get install -y \
+# Install Chromium for server-side PDF generation
+RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium \
     fonts-liberation \
     fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
-# Set working directory
 WORKDIR /app
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install backend Python dependencies
+COPY Backend/requirements.txt ./Backend/requirements.txt
+RUN pip install --no-cache-dir -r Backend/requirements.txt
 
-# Copy backend source
+# Copy the complete project because Backend imports the root-level ai package
 COPY . .
 
-# Chromium location used by report_service.py
+# Chromium used by report_service.py
 ENV CHROME_BINARY=/usr/bin/chromium
 
-# Start FastAPI
-CMD ["sh", "-c", "PYTHONPATH=/app/.. uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
+# Start FastAPI from the Backend directory
+CMD ["sh", "-c", "cd /app/Backend && PYTHONPATH=/app uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-10000}"]
