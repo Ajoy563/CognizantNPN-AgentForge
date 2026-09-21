@@ -191,7 +191,7 @@ SolutionForge-AI/
        └─────────────┘                 │
                                       ▼
                          ┌────────────────────────┐
-                         │    CrewAI Workflow      │
+                         │    CrewAI Workflow     │
                          │                        │
                          │ Business Analyst       │
                          │         ↓              │
