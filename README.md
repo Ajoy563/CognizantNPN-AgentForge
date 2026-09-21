@@ -32,12 +32,12 @@ Instead of manually going through requirements, architecture, technology selecti
 
 ## 🤖 Multi-Agent AI Workflow
 
-````text
+```text
                     💡 Business Idea
                           │
                           ▼
                 ┌──────────────────┐
-                │  Business Analyst│
+                │ Business Analyst │
                 └────────┬─────────┘
                          ▼
                 ┌──────────────────┐
@@ -53,6 +53,7 @@ Instead of manually going through requirements, architecture, technology selecti
                 └────────┬─────────┘
                          ▼
                  📋 Solution Blueprint
+```
 
 ## 📂 Project Structure
 
@@ -160,10 +161,8 @@ SolutionForge-AI/
 ├── .gitignore
 ├── README.md
 └── Dockerfile
+```
 
-
-
-```markdown
 ## 🏗️ System Architecture
 
 ```text
@@ -171,16 +170,16 @@ SolutionForge-AI/
                            │
                            ▼
                 ┌─────────────────────┐
-                │   React + Vite      │
-                │     Frontend        │
+                │    React + Vite     │
+                │      Frontend       │
                 └──────────┬──────────┘
                            │
                     Firebase Token
                            │
                            ▼
                 ┌─────────────────────┐
-                │    FastAPI          │
-                │     Backend         │
+                │       FastAPI       │
+                │       Backend       │
                 └──────────┬──────────┘
                            │
               ┌────────────┴────────────┐
@@ -208,5 +207,5 @@ SolutionForge-AI/
                                      │
                               ┌──────┴──────┐
                               ▼             ▼
-                           HTML           PDF
-````
+                             HTML          PDF
+```
