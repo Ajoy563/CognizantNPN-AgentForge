@@ -251,10 +251,7 @@ Swapping the model or provider is a `.env` change, not a code change —
 no agent or task file ever reads `LLM_PROVIDER`/`MODEL_NAME`/API keys
 directly.
 
-## Testing
 
-`ai/tests/` (kept local, not pushed to GitHub — see repo `.gitignore`),
-183 tests, all passing with no real LLM calls:
 
 | File | Covers |
 |---|---|
